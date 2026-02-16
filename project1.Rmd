@@ -1,0 +1,962 @@
+---
+title: "TMA4250 - Project 1"
+author: "Alessandro Tobia Cavalieri"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Problem 1
+
+Note: I decide to scale all the sizes in this exercise by a factor of 10 ([0:50]->[0:5]) for better visualization
+
+## Point a
+
+A Gaussian Random Field is defined such that $\forall \vec x=(x_1,x_2,\dots,x_k)\in D$, the random vector defined by
+
+$$
+\vec r=\begin{pmatrix}
+    r(x_1)\\ r(x_2) \\ \vdots \\ r(x_k)
+\end{pmatrix}
+$$
+
+is a multivariate gaussian: 
+$$
+\vec r\sim\mathcal N({\vec \mu}, \mathbf \Sigma)
+$$
+
+This implies that $\Sigma$ (i.e. the variance-covariance matrix) must be positive semidefinite (i.e. $a^\top \mathbf \Sigma a \geq 0$).
+
+Since $\rho(x,x') = \frac{\Sigma_{xx'}}{\sigma_x\sigma_{x'}}$, then the covariance matrix can be rewritten as:
+
+$$
+\mathbf \Sigma =\mathbf{DRD}
+$$
+
+where: - $\mathbf D = diag(\sigma_1,\dots ,\sigma_n)$ - $\mathbf R = [\rho(x_i,x_j)]$
+
+For any coefficient $\vec a \in \mathbb R^n$:
+
+$$
+\vec a ^\top \mathbf \Sigma \vec a=
+\vec a ^\top \mathbf{DRD} \vec a =
+(\mathbf{D}\vec a) ^\top \mathbf{R} (\mathbf{D}\vec a)
+$$
+
+$\vec b = \mathbf D\vec a$. Then we have:
+
+$$
+\vec b^\top \mathbf R\vec b\geq 0\quad \forall \vec b\in \mathbb R^n
+$$
+
+This shows that the correlation matrix $\mathbf R$ must be positive semidefinite.
+
+Conversely, consider $\mathbf R$ not positive definite: then, there exists a vector $\vec b$ such that
+
+$$
+\vec b^\top \mathbf R\vec b<0
+$$
+
+therefore, the variance of some linear combination of the Gaussian field values would be negative:
+
+$$
+Var\Big (\sum_ib_ir(x_i)\Big)=\vec b^\top\mathbb R\vec b <0
+$$
+
+And this is impossible for any real Gaussian random vector.
+
+
+```{r}
+scale = 10
+exponential_func <- function(xi, tau, nu){
+  # xi: inverse length scale parameter (decay speed / corrlation lenth)
+  # tau: vector of distances
+  # nu: shape (or smoothness) parameter
+
+  exp(-xi*tau^nu) # formula from course notes
+}
+
+# Parameters
+var <- 5                            # variance
+nu <- c(1, 1.9)                     # powered exponential parameters
+L <- seq(0, 50, length.out = 200)/scale    # distances to plot
+
+#par(mfrow = c(1,2))
+
+# Plot correlation functions
+plot(L, exponential_func(1,L,nu[1]), type="l", col="blue",
+     ylab="rho_r(tau)", xlab="tau", main="Powered Exponential Correlation")
+lines(L, exponential_func(1,L,nu[2]), col="red")
+legend("topright", legend=paste("nu =", nu), col=c("blue","red"), lty=1)
+grid()
+
+# Plot associated variograms
+plot(L, var*(1-exponential_func(1,L,nu[1])), type="l", col="blue",
+     ylab="gamma_r(tau)", xlab="tau", main="Associated Variograms")
+lines(L, var*(1-exponential_func(1,L,nu[2])), col="red")
+legend("topright", legend=paste("nu =", nu), col=c("blue","red"), lty=1)
+grid()
+
+```
+
+
+
+## Point b
+
+```{r}
+scale = 10
+```
+
+```{r}
+cov_matrix_2d <- function(grid, xi, nu, var){
+
+  # Pairwise Euclidean distance matrix (C-optimized)
+  D <- as.matrix(dist(grid))
+
+  # Apply kernel elementwise (already vectorized)
+  Sigma <- var * exponential_func(xi, D, nu)
+
+  return(Sigma)
+}
+
+
+
+mvnchol <- function(size, n, mu, S) {
+  stopifnot(
+    length(mu) == size,
+    nrow(S) == size,
+    ncol(S) == size
+  )
+
+  # Cholesky: lower-triangular
+  L <- t(chol(S))           # size x size
+  # Standard normals through inverse sampling
+  u <- runif(size*n,0,1)
+  theta <- runif(size*n,0,2*pi)
+  r <- sqrt(-2*log(u))
+  Z <- matrix(r*cos(theta), nrow = size, ncol = n)
+
+  # Affine transform
+  X <- L %*% Z + matrix(mu, nrow = size, ncol = n)
+
+  return(X)                 # size x n
+}
+```
+
+```{r}
+nx <- 30
+ny <- 30
+
+x <- seq(0, 50, length.out = nx) / scale
+y <- seq(0, 50, length.out = ny) / scale
+
+grid <- expand.grid(x = x, y = y)
+
+Sigma1 <- cov_matrix_2d(grid, xi = 1, nu = 1, var = 2)
+Sigma2 <- cov_matrix_2d(grid, xi = 1, nu = 1.9, var = 2)
+
+z1 <- mvnchol(size = nrow(Sigma1), n = 1, mu = rep(0, nrow(grid)), S = Sigma1)
+z2 <- mvnchol(size = nrow(Sigma2), n = 1, mu = rep(0, nrow(grid)), S = Sigma2)
+
+Zmat1 <- matrix(z1, nx, ny)
+Zmat2 <- matrix(z2, nx, ny)
+
+
+par(mfrow=c(2,2))
+
+image(t(Sigma1[nrow(Sigma1):1, ]), col = topo.colors(50),
+      main = expression(Sigma[1]))
+image(t(Sigma2[nrow(Sigma2):1, ]), col = topo.colors(50),
+      main = expression(Sigma[2]))
+
+# 2D Gaussian Random Fields
+image(x, y, Zmat1, main = expression("2D Gaussian Random Field, " ~ nu == 1))
+
+image(x, y, Zmat2, main = expression("2D Gaussian Random Field, " ~ nu == 1.9))
+```
+
+## Point c
+
+Denoting the observed vector:
+
+
+$$
+\mathbf d = \begin{bmatrix}
+d(10)\\ d(25)\\ d(30)
+\end{bmatrix} = \begin{bmatrix}
+r(10)\\ r(25)\\ r(30)
+\end{bmatrix} + \begin{bmatrix}
+e(10)\\ e(25)\\ e(30)
+\end{bmatrix} = \mathbf r+\mathbf e
+$$
+
+
+- $\mathbf r \sim \mathcal N(\mathbf 0, \Sigma_r)$
+- $\mathbf e \sim \mathcal N(\mathbf 0, \sigma_e^2\mathbf I_3)$
+
+Since $\mathbf r$ and $\mathbf e$ are independent,
+
+$$
+\mathbf d\sim \mathcal N(\mathbf 0, \Sigma_r+\sigma_e^2\mathbf I_3)
+$$
+
+The likelihood of the observed vector $\mathbf d$ is:
+
+$$
+L(\sigma_e^2|\mathbf d) =\frac{1}{(2\pi)^{\frac 32} \vert \Sigma_r+\sigma_e^2\mathbf I_3\vert^{\frac12}} \exp\Big (-\frac 12 \mathbf d^\top (\Sigma_r+\sigma_e^2\mathbf I_3)^{-1}\mathbf d\Big)
+$$
+
+## Point d
+
+Since $\mathbf d = \mathbf r + \mathbf e$
+
+we compute the cross-covariance:
+$$
+\mathrm{Cov(\mathbf r,\mathbf d)} = \mathrm{Cov(\mathbf r,\mathbf r+\mathbf e)}  = \Sigma_r
+$$
+Therefore,
+$$
+\begin{pmatrix}\mathbf r \\ \mathbf d\end{pmatrix}\sim \begin{pmatrix}\begin{pmatrix}0\\0\end{pmatrix},\begin{pmatrix}\Sigma_r & \Sigma_r \\ \Sigma_r & \Sigma_r+\sigma_e^2\mathbf I_3\end{pmatrix}\end{pmatrix}
+$$
+So we can derive the posterior distribution using the conditioning formula for multivariate Gaussians:
+$$
+\mathbf r\ |\ \mathbf d\sim \mathcal N(\mathbf \mu_{post},\Sigma_{post})
+$$
+where:
+- $\mathbf \mu_{post} = \Sigma_r(\Sigma_r+\sigma_e^2\mathbf I_3)^{-1}\mathbf d$
+- $\Sigma_{post}=\Sigma_r-\Sigma_r(\Sigma_r+\sigma_e^2\mathbf I_3)^{-1}\Sigma_r$
+The pdf of the posterior GF model is given by:
+
+$$
+p(\mathbf r \ | \ \mathbf d)=\frac{1}{(2\pi)^{3/2}|\Sigma_{post}|^{1/2}}\exp\Big (-\frac12(\mathbf r-\mathbf \mu_{post})^\top\Sigma_{post}^{-1}(\mathbf r-\mathbf \mu_{post})\Big)
+$$
+$$
+p(\mathbf r \ | \ \mathbf d) \propto \exp\Big\{-\frac 12 \Big[ \mathbf r^\top\Sigma_r^{-1}\mathbf r + (\mathbf d-\mathbf r)^\top (\sigma_e^2\mathbf I_3)^{-1}(\mathbf d-\mathbf r)\Big ]\Big\}
+$$
+### Observations
+
+```{r}
+
+obs_locations <- matrix(c(
+  1.0, 1.0,
+  2.5, 2.5,
+  3.0, 3.0
+), ncol = 2, byrow = TRUE) # observation locations (scaled)
+
+n_obs <- nrow(obs_locations)
+
+# Find nearest grid indices
+obs_index <- apply(obs_locations, 1, function(pt){
+  which.min( (grid$x - pt[1])^2 + (grid$y - pt[2])^2 )
+})
+obs_values_1 <- Zmat1[obs_index]
+obs_values_2 <- Zmat2[obs_index]
+
+
+N <- nrow(grid)
+n_obs <- length(obs_index)
+
+H <- matrix(0, nrow = n_obs, ncol = N)
+
+for(i in 1:n_obs){
+  H[i, obs_index[i]] <- 1
+}
+
+sigma_e2 <- 0.25
+sigma_e <- sqrt(sigma_e2)
+
+d1 <- obs_values_1 + rnorm(n_obs, 0, sigma_e)
+d2 <- obs_values_2 + rnorm(n_obs, 0, sigma_e)
+
+```
+
+### Posteriors
+
+```{r}
+# first GRF
+Sigma_obs_1 <- H %*% Sigma1 %*% t(H) + sigma_e2 * diag(n_obs)
+
+Sigma_obs_inv_1 <- solve(Sigma_obs_1)
+
+mu_post_1 <- Sigma1 %*% t(H) %*% Sigma_obs_inv_1 %*% d1
+
+Sigma_post_1 <- Sigma1 - 
+  Sigma1 %*% t(H) %*% Sigma_obs_inv_1 %*% H %*% Sigma1
+
+# second GRF
+Sigma_obs_2 <- H %*% Sigma2 %*% t(H) + sigma_e2 * diag(n_obs)
+
+Sigma_obs_inv_2 <- solve(Sigma_obs_2)
+
+mu_post_2 <- Sigma2 %*% t(H) %*% Sigma_obs_inv_2 %*% d2
+
+Sigma_post_2 <- Sigma2 - 
+  Sigma2 %*% t(H) %*% Sigma_obs_inv_2 %*% H %*% Sigma2
+
+```
+
+### Prediction intervals
+
+```{r}
+z_val <- qnorm(0.95)
+
+sd_post_1 <- sqrt(diag(Sigma_post_1))
+sd_post_2 <- sqrt(diag(Sigma_post_2))
+
+lower_1 <- mu_post_1 - z_val * sd_post_1
+upper_1 <- mu_post_1 + z_val * sd_post_1
+
+lower_2 <- mu_post_2 - z_val * sd_post_2
+upper_2 <- mu_post_2 + z_val * sd_post_2
+
+Mu_mat_1  <- matrix(mu_post_1, nx, ny)
+Var_mat_1 <- matrix(sd_post_1^2, nx, ny)
+
+Mu_mat_2  <- matrix(mu_post_2, nx, ny)
+Var_mat_2 <- matrix(sd_post_2^2, nx, ny)
+
+par(mfrow=c(1,2))
+
+image(x, y, Mu_mat_1, main="Posterior Mean (nu=1)")
+points(obs_locations[,1], obs_locations[,2], col="red", pch=19)
+
+image(x, y, Mu_mat_2, main="Posterior Mean (nu=1.9)")
+points(obs_locations[,1], obs_locations[,2], col="red", pch=19)
+
+```
+```{r}
+
+image(x, y, matrix(sd_post_1, nx, ny), main="Posterior SD (nu=1)")
+points(obs_locations[,1], obs_locations[,2], col="red", pch=19)
+
+image(x, y, matrix(sd_post_2, nx, ny), main="Posterior SD (nu=1.9)")
+points(obs_locations[,1], obs_locations[,2], col="red", pch=19)
+
+```
+
+We can see that the posterior variance is very low near the observed points, and grows higher as much one moves far from them.
+In the model with higher $nu$ parameter, the observations seems to influence their surrounding point "more", reflecting the smoother behavious previously noticed.
+
+# Problem 2
+
+```{r}
+rm(list = ls())
+library(viridis)
+set.seed(777)
+```
+### Parameters
+```{r}
+n_rows <- 30
+n_cols <- 30
+mu <- 0
+var <- 2
+psi <- 3
+```
+
+### Correlation function: Exponential
+$$
+Corr\{{r(\mathbf x), r(\mathbf x ')}\} = \rho \{{r(\mathbf x), r(\mathbf x ')}\} = \exp (-\tau / \psi_r)
+$$
+```{r}
+exponential_func <- function(tau, psi){
+  # xi: inverse length scale parameter (decay speed / corrlation lenth)
+  # tau: vector of distances
+  # nu: shape (or smoothness) parameter
+  return(exp(-tau/psi))
+}
+```
+
+### Cholesky factorization function
+
+```{r}
+mvnchol <- function(size, n, mu, S) {
+  stopifnot(
+    length(mu) == size,
+    nrow(S) == size,
+    ncol(S) == size
+  )
+
+  # Cholesky: lower-triangular
+  L <- t(chol(S))           # size x size
+  # Standard normals through inverse sampling
+  u <- runif(size*n,0,1)
+  theta <- runif(size*n,0,2*pi)
+  r <- sqrt(-2*log(u))
+  Z <- matrix(r*cos(theta), nrow = size, ncol = n)
+
+  # Affine transform
+  X <- L %*% Z + matrix(mu, nrow = size, ncol = n)
+
+  return(X)                 # size x n
+}
+```
+
+## Point a
+```{r}
+grid <- expand.grid(x = 1:n_rows, y = 1:n_cols)   # creates the grid
+tau <- as.matrix(dist(grid))                      # matrix of distances
+S <- var * exponential_func(tau, psi)         # variance / covariance matrix
+
+r <- mvnchol(size = nrow(S), n = 1, mu = rep(0, nrow(S)), S = S) # calculates field (as vector) using TMA4300 Cholesky factorization + inverse sampling
+
+Rmat <- matrix(r, n_rows, n_cols)     # turns vector field into matrix form
+
+# 2D Gaussian Random Fields
+image(1:n_rows, 1:n_cols, Rmat, main = expression("2D Gaussian Random Field, " ~ psi == 3))
+
+```
+
+## Point b
+### Correct variogram
+$$
+\gamma (h) = \sigma^2(1-\exp (-h/\psi ))
+$$
+
+```{r}
+true_variogram_func <- function(var, h, psi){
+  return(var*(1-exp(-h/psi)))
+}
+```
+
+### Empirical variogram
+
+```{r}
+library(geoR)
+
+coords <- as.matrix(grid)
+geodata_obj <- as.geodata(cbind(coords, r), coords.col = 1:2, data.col = 3)
+vg <- variog(geodata_obj, max.dist = max(dist(coords))/2, messages = FALSE)
+```
+
+### Plot
+
+```{r}
+h_vals <- seq(0, max(vg$u), length.out = 200)
+ylim_max <- max(c(vg$v, true_variogram_func(var=var, h_vals, psi)))
+
+plot(vg, ylim = c(0, ylim_max), pch = 16)
+
+lines(h_vals, true_variogram_func(var=var, h_vals, psi), col = "red", lwd = 2)
+
+legend("bottomright",
+       legend = c("Empirical", "True"),
+       col = c("black", "red"),
+       pch = c(16, NA),
+       lty = c(NA, 1),
+       lwd = c(NA, 2))
+grid()
+
+```
+## Point c
+
+```{r}
+par(mfrow = c(3,2))
+
+for(i in 1:3){
+
+  # POINT A
+  grid <- expand.grid(x = 1:n_rows, y = 1:n_cols)   # creates the grid
+  tau <- as.matrix(dist(grid))                      # matrix of distances
+  S <- var * exponential_func(tau, psi)         # variance / covariance matrix
+
+  r <- mvnchol(size = nrow(S), n = 1, mu = rep(0, nrow(S)), S = S) # calculates field (as vector) using TMA4300 Cholesky factorization + inverse sampling
+
+  Rmat <- matrix(r, n_rows, n_cols)     # turns vector field into matrix form
+
+  # POINT B
+  coords <- as.matrix(grid)
+  geodata_obj <- as.geodata(cbind(coords, r), coords.col = 1:2, data.col = 3)
+  vg <- variog(geodata_obj, max.dist = max(dist(coords))/2, messages = FALSE)
+
+  # PLOT
+
+  image(1:n_rows, 1:n_cols, Rmat, main = expression("2D Gaussian Random Field, " ~ psi == 3))
+
+  h_vals <- seq(0, max(vg$u), length.out = 200)
+  ylim_max <- max(c(vg$v, true_variogram_func(var=var, h_vals, psi)))
+
+  plot(vg, ylim = c(0, ylim_max), pch = 16)
+
+  lines(h_vals, true_variogram_func(var=var, h_vals, psi), col = "red", lwd = 2)
+
+  legend("bottomright",
+        legend = c("Empirical", "True"),
+        col = c("black", "red"),
+        pch = c(16, NA),
+        lty = c(NA, 1),
+        lwd = c(NA, 2))
+  grid()
+
+}
+```
+
+The empirical variogram fluctuates around the theoretical variogram due to sampling variability. Since it is computed from a single realization of the Gaussian random field, deviations are expected. 
+
+As the distance increases, the empirical variogram tends to deviate more from the theoretical curve because the number of point pairs at large distances decreases. This leads to a higher variance of the estimator for large lags.
+
+
+## Point d
+
+```{r}
+
+idx <- sample(1:nrow(grid), 36, replace = FALSE) # sample 36 locations
+sampled_locations <- grid[idx, ] 
+
+coords_sub <- as.matrix(grid[idx, ])
+z_sub <- as.vector(Rmat)[idx]
+
+geodata_sub <- as.geodata(
+  cbind(coords_sub, z_sub),
+  coords.col = 1:2,
+  data.col = 3
+)
+
+vg_sub <- variog(geodata_sub, messages =FALSE)
+
+h_vals <- seq(0, max(vg_sub$u), length.out = 200)
+ylim_max <- max(c(vg_sub$v, true_variogram_func(var=var, h_vals, psi)))
+
+plot(vg_sub, ylim = c(0, ylim_max), pch = 16)
+
+lines(h_vals, true_variogram_func(var=var, h_vals, psi), col = "red", lwd = 2)
+
+legend("bottomright",
+      legend = c("Empirical", "True"),
+      col = c("black", "red"),
+      pch = c(16, NA),
+      lty = c(NA, 1),
+      lwd = c(NA, 2))
+grid()
+
+```
+
+Using only 36 randomly sampled locations increases the variability of the empirical variogram. Since fewer spatial pairs are available at each lag distance, the estimator becomes less stable, especially for large distances.
+
+## Point e
+```{r}
+ini.var  <- var(z_sub)
+ini.psi  <- max(dist(coords_sub)) / 4
+
+fit <- likfit(
+  geodata_sub,
+  cov.model = "exponential",
+  ini.cov.pars = c(ini.var, ini.psi),
+  nugget = 0,
+  fix.nugget = TRUE,
+  messages = FALSE
+)
+
+cat("True variance:", var, "\n")
+cat("Estimated variance:", fit$sigmasq, "\n\n")
+
+cat("True psi:", psi, "\n")
+cat("Estimated psi:", fit$phi, "\n")
+
+```
+
+## Point f
+```{r}
+
+# True parameters
+true_var <- 2
+true_psi <- 3
+
+sample_sizes <- c(9, 64, 100, 400)
+
+par(mfrow = c(2,2), mar = c(4,4,2,1))
+
+estimates_df <- data.frame(
+  n_samples = integer(),
+  true_variance = numeric(),
+  est_variance = numeric(),
+  true_psi = numeric(),
+  est_psi = numeric()
+)
+
+for(n_samples in sample_sizes){
+
+  # Sample locations from the grid
+  idx <- sample(1:nrow(grid), n_samples, replace = FALSE)
+  coords_sub <- as.matrix(grid[idx, ])
+  z_sub <- as.vector(Rmat)[idx]
+
+  geodata_sub <- as.geodata(
+    cbind(coords_sub, z_sub),
+    coords.col = 1:2,
+    data.col = 3
+  )
+
+  ini_var  <- var(z_sub)
+  ini_psi  <- max(dist(coords_sub)) / 4
+
+  fit <- likfit(
+    geodata_sub,
+    cov.model = "exponential",
+    ini.cov.pars = c(ini_var, ini_psi),
+    nugget = 0,
+    fix.nugget = TRUE,
+    messages = FALSE
+  )
+
+  estimates_df <- rbind(estimates_df, data.frame(
+    n_samples = n_samples,
+    true_variance = true_var,
+    est_variance = round(fit$sigmasq, 4),
+    true_psi = true_psi,
+    est_psi = round(fit$phi, 4)
+  ))
+
+  vg_sub <- variog(geodata_sub, uvec = seq(0, max(dist(coords_sub))/2, length.out = 100), messages = FALSE)
+  h_vals <- seq(0, max(vg_sub$u), length.out = 200)
+  gamma_true <- true_variogram_func(true_var, h_vals, true_psi)
+  gamma_est <- true_variogram_func(fit$sigmasq, h_vals, fit$phi)
+  ylim_max <- max(c(vg_sub$v, gamma_true))
+
+  # Plot
+  plot(vg_sub, ylim = c(0, ylim_max), pch = 16,
+       main = paste(n_samples, "locations"),
+       xlab = "Distance h", ylab = expression(gamma(h)))
+  lines(h_vals, gamma_true, col = "red", lwd = 2)
+  lines(h_vals, gamma_est, col = "green", lwd = 2)
+  legend("bottomright",
+         legend = c("Empirical", "True"),
+         col = c("black", "red"),
+         pch = c(16, NA),
+         lty = c(NA, 1),
+         lwd = c(NA, 2))
+  grid()
+}
+
+print(estimates_df)
+```
+
+# Problem 3
+
+```{r}
+rm(list = ls())
+library(viridis)
+set.seed(100)
+```
+## Point a
+
+$$
+ρ(τ) = (1+0.3τ)\exp(−0.3τ)
+$$
+
+```{r}
+
+matern_func <- function(tau){
+  return((1+0.3*tau)*exp(-0.3*tau))
+}
+
+cov_matrix_2d <- function(grid, var){
+
+  # Pairwise Euclidean distance matrix
+  D <- as.matrix(dist(grid)) 
+
+  # Apply Matérn kernel elementwise
+  Sigma <- var * matern_func(D)
+
+  return(Sigma)
+}
+mvnchol <- function(size, n, mu, S) {
+  stopifnot(
+    length(mu) == size,
+    nrow(S) == size,
+    ncol(S) == size
+  )
+
+  # Cholesky: lower-triangular
+  L <- t(chol(S))           # size x size
+  # Standard normals through inverse sampling
+  u <- runif(size*n,0,1)
+  theta <- runif(size*n,0,2*pi)
+  r <- sqrt(-2*log(u))
+  Z <- matrix(r*cos(theta), nrow = size, ncol = n)
+
+  # Affine transform
+  X <- L %*% Z + matrix(mu, nrow = size, ncol = n)
+
+  return(X)                 # size x n
+}
+
+scale=1
+
+nx <- 50
+ny <- 50
+
+x <- seq(0, 50, length.out = nx) / scale
+y <- seq(0, 50, length.out = ny) / scale
+
+grid <- expand.grid(x = x, y = y)
+
+Sigma <- cov_matrix_2d(grid, var = 1)
+
+z <- mvnchol(size = nrow(Sigma), n = 1, mu = rep(0, nrow(grid)), S = Sigma)
+
+Zmat <- matrix(z, nx, ny)
+
+# 2D Gaussian Random Fields
+image(x, y, Zmat, main = expression("2D Gaussian Random Field"))
+
+```
+
+### Maximum value of the field
+
+```{r}
+max_value <- max(z)
+max_positions <- which(z == max_value)
+
+max_x <- (max_positions - 1) %% nx + 1   # row index
+max_y <- (max_positions - 1) %/% nx + 1    # column index
+
+
+image(x, y, Zmat, main = expression("2D Gaussian Random Field"))
+points(max_x/scale, max_y/scale, pch = 19, cex = 1.5, col = "black")
+cat(sprintf("Max = %f at (row, col): %s\n",
+            max_value,
+            paste(sprintf("(%d,%d)", max_y, max_x), collapse = ", ")))
+```
+
+## Point b
+Make the first measurement at grid location x1 = (20,30). This gives first
+measurement d(x1). Condition on the result and visualize the conditional mean
+and variance on the grid.
+
+### Observation
+$$
+d(x_1)=r(x_1) +ɛ
+$$
+
+$$
+ɛ \sim \mathcal N(0,0.01 ^2)
+$$
+```{R}
+x1 <- c(20,30)
+r_true <- Zmat[x1[1],x1[2]]
+noise_sd <- 0.01
+d1 <- r_true + rnorm(1, 0, noise_sd)
+d1
+```
+### Conditioning
+```{r}
+idx <- (x1[2] - 1)*nx + x1[1]
+k <- Sigma[, idx]
+sigma11 <- Sigma[idx, idx] + noise_sd^2
+mu_post <- k / sigma11 * d1
+var_post <- diag(Sigma) - (k^2) / sigma11
+
+Mu_mat  <- matrix(mu_post, nx, ny)
+Var_mat <- matrix(var_post, nx, ny)
+
+par(mfrow = c(1,2))
+
+image(x, y, Mu_mat, main = "Posterior Mean", xlab = "x", ylab = "y")
+points(x1[1], x1[2], col="red", pch=19)
+
+image(x, y, Var_mat, main = "Posterior Variance", xlab = "x", ylab = "y")
+points(x1[1], x1[2], col="red", pch=19)
+```
+
+## Point c
+
+Prove the Expected Imprevement closed form formula.
+
+Starting from the expected improvement definition:
+
+$$
+EI_t(x) = \mathbb E[\max (r(x)-m_t^*, 0) | d(x_1),\dots , d(x_{t-1})]
+$$
+
+where $m_t^* = \max(d(x_1),\dots , d(x_{t-1}))$
+
+We know that
+
+$$
+r(x)\sim \mathcal N(\mu, \sigma ^2)
+$$
+
+Then
+$$
+EI = \int_{m^*}^\infty (r-m^*)f(r) \ \mathrm d r
+$$
+
+where $f(r)$ is the normal density
+
+$$
+f(r) = \frac 1\sigma \phi \Big (\frac{r-\mu}\sigma \Big)
+$$
+
+Using $z=\frac{r-\mu}\sigma$
+we have:
+- $r=\mu +\sigma z$
+- $\mathrm dr = \sigma \mathrm dz$
+
+When $m^* = r$, we have $z^* = \frac{m^*-\mu}\sigma$
+
+$$
+EI = \int_{z^*}^\infty (\mu + \sigma z - m^*)\phi (z) \mathrm dz = (\mu-m^*)\int_{z^*}^\infty \phi(z)\ \mathrm dz + \int_{z^*}^\infty \sigma z \phi (z) \ \mathrm dz
+$$
+
+By the normal distribution's symmetry ($\int_{z^*}^\infty \phi(z)\ \mathrm dz=1-\int_\infty^{z^*} \phi(z)\ \mathrm dz = \Phi(z^*)$), the first term becomes:
+
+$$
+(\mu-m^*)\Phi\Big (\frac{\mu -m^*}\sigma\Big)
+$$
+
+Since $\phi(z) = \frac 1{\sqrt{2\pi}} e^{-\frac {z^2}2}$,
+
+$$
+\int_{z^*}^\infty \sigma z \frac 1{\sqrt{2\pi}} e^{-\frac {z^2}2} \ \mathrm dz = \frac \sigma{\sqrt{2\pi}}e^{-\frac{({z^*})^2}2} = \sigma \phi(z^*)
+$$
+
+Putting all together:
+$$
+EI = (\mu-m^*)\Phi\Big (\frac{\mu -m^*}\sigma\Big) + \sigma \phi\Big(\frac{m^*-\mu}\sigma\Big )
+$$
+
+thanks to the normal density's symmetrical properties ($\phi(z^*) = \phi(-z^*)$):
+
+$$
+EI = (\mu-m^*)\Phi\Big (\frac{\mu -m^*}\sigma\Big) + \sigma \phi\Big(\frac{\mu-m^*}\sigma\Big)
+$$
+
+
+## Point d
+Implementation of a sequential algorithm for $t = 1,2,3,\dots $ based on sequential selection of measurement sites, and sequential updating of the Gaussian model after each measurement (conditioning to more and more data).
+
+### Expected improvement
+
+$$
+z_{val} = \frac{\mu_t(x)-m^*_t}{\sigma_t(x)}
+$$
+
+$$
+EI_t(x) = (\mu_t(x)-m^*_t)\Phi(z_{val})+\sigma_t(x) \phi (z_{val})
+$$
+```{r}
+sequential_bayesian_hotspot_search <- function(iters, x0, field, Sigma, nx, ny, noise_sd){
+  # iters: number of iterations
+  # x0: starting point, passed as a vector [x0,y0]
+  # field: vector of size (nx)(ny) representing the gaussian random field, stored column-wise
+  # GRF initial covariance matrix
+  # nx: number of columns of the field
+  # ny: number of rows of the field
+  # noise_sd: standard deviation of the gaussian noise applied to the observations
+
+  curr_x <- x0   # initial point
+
+  mu_matrix <- matrix(0, nrow = nx, ncol = ny)
+  mu_post <- as.vector(mu_matrix)
+  S <- Sigma  # prior covariance
+
+  path <- numeric(iters)
+  path_vals <- numeric(iters)
+  best_so_far <- numeric(iters)
+  best_so_far_vals <- numeric(iters)
+
+  for (t in 1:iters) {
+
+    row <- curr_x[1]
+    col <- curr_x[2]
+
+    # compute vector index for the observation
+    idx <- (col - 1) * nx + row
+
+    # take observation (add noise)
+    r_true <- field[idx]
+    d <- r_true + rnorm(1, 0, noise_sd)
+
+    path[t] <- idx
+    path_vals[t] <- d
+    best_so_far[t] <- path[which.max(path_vals)]
+    best_so_far_vals[t] <- max(path_vals)
+
+    # Get all indices and data observed up to current time t
+    obs_idx <- path[1:t]
+    obs_d   <- path_vals[1:t]
+    
+    # Build components for Batch Posterior
+    # K: Covariance between all grid points and observed points
+    K_obs <- Sigma[, obs_idx, drop=FALSE]
+    # Sigma_obs: Covariance between observed points + noise
+    Sigma_obs_inv <- solve(Sigma[obs_idx, obs_idx, drop=FALSE] + (noise_sd^2) * diag(t))
+    
+    # 2. Update Posterior Mean (Full field)
+    mu_post <- K_obs %*% Sigma_obs_inv %*% obs_d
+    
+    # 3. Update Posterior Variance (Diagonal only for EI)
+    # Formula: Var = Var_prior - diag(K * Sigma_inv * K^T)
+    var_post <- diag(Sigma) - rowSums((K_obs %*% Sigma_obs_inv) * K_obs)
+    
+    # 4. Expected improvement (EI)
+    m_star <- best_so_far_vals[t]
+    std_post <- sqrt(pmax(var_post, 0))
+    std_safe <- pmax(std_post, 1e-10) 
+    
+    z_val <- (mu_post - m_star) / std_safe
+    EI <- (mu_post - m_star) * pnorm(z_val) + std_post * dnorm(z_val)
+    
+    # Prevent re-sampling the same points
+    EI[obs_idx] <- -Inf
+
+    # pick next index
+    next_idx <- which.max(EI)
+    curr_x <- c(((next_idx - 1) %% nx) + 1, ((next_idx - 1) %/% nx) + 1)
+
+  }
+  return(list(path = path, path_vals = path_vals, 
+              best_so_far=best_so_far, best_so_far_vals=best_so_far_vals,
+              final_mu = matrix(mu_post, nx, ny),
+              final_EI = matrix(EI, nx, ny)
+              ))
+}
+```
+```{r}
+
+x0 <- c(20,30)
+iters <- 30
+res <- sequential_bayesian_hotspot_search(
+  iters = iters,
+  x0 = x0,
+  field = z,
+  Sigma = Sigma,
+  nx = nx,
+  ny = ny,
+  noise_sd = 0.01
+)
+
+path_rows <- ((res$path - 1) %% nx) + 1
+path_cols <- ((res$path - 1) %/% nx) + 1
+
+best_rows <- ((res$best_so_far - 1) %% nx) + 1
+best_cols <- ((res$best_so_far - 1) %/% nx) + 1
+
+par(mfrow = c(2,2))
+
+# 1. Residual Plot
+plot(1:iters, max(Zmat) - res$best_so_far_vals, type="o", col="blue",
+     main="Convergence (Residual)", xlab="Steps", ylab="Distance to True Max")
+grid()
+
+# 2. Search Path on Ground Truth
+# Note: In R, image() puts rows on X and cols on Y
+image(1:nx, 1:ny, Zmat, main="Search Path Progression", col=viridis(100))
+lines(path_rows, path_cols, col="white", lwd=1)
+text(path_rows, path_cols, labels=1:iters, cex=0.7, col="white", pos=3)
+points(max_x, max_y, col="red", pch=4, lwd=3, cex=1.5) # Target
+
+# 3. Final Posterior Mean Matrix
+image(1:nx, 1:ny, res$final_mu, main="Final Mean Model (Heatmap)", col=plasma(100))
+points(path_rows, path_cols, pch=20, col="black", cex=0.5)
+
+# 4. Final EI Matrix
+image(1:nx, 1:ny, res$final_EI, main="Final EI", col=magma(100))
+```
+
