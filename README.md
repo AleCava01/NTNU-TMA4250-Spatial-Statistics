@@ -1,4 +1,10 @@
 # NTNU-TMA4250-Spatial-Statistics
-Course notes from the course Spatial Statistics course held at NTNU by prof. Jo Eidsvik AA 2025
+Course notes from the course Spatial Statistics course held at NTNU by prof. Jo Eidsvik.
+A.A. 2025/2026
 
-- Project 1: Gaussian Random Fields
+
+## Projects
+- **Project 1: Gaussian Random Fields** | [Live page](https://AleCava01.github.io/NTNU-TMA4250-Spatial-Statistics/Projects/Projects-output/Project-1.html)
+
+- **Project 2: ...coming soon...**
+- **Project 3: ...coming soon...**
